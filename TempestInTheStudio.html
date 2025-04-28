@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tempest in the Studio</title>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; font-family:'EB Garamond', serif; background:#333; }
+    .overlay { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.8); color:#fff; z-index:10; }
+    .hidden { display:none; }
+    button { background:#5c3b1e; color:#fff; border:none; padding:1rem 2rem; margin:.5rem; border-radius:5px; cursor:pointer; }
+    button.small { padding:0.5rem 1rem; font-size:0.8rem; }
+    #pigmentOverlay { position:absolute; top:10px; right:10px; width:200px; background:#f6f1d3; color:#333; padding:1rem; border-radius:8px; z-index:5; }
+    #goldOverlay { position:absolute; bottom:10px; left:220px; width:420px; background:#f6f1d3; padding:1rem; border-radius:8px; z-index:5; }
+    #masterpieceCanvas { position:absolute; top:10px; left:10px; width:200px; height:200px; border:2px solid #e6dbc7; background:#fff; z-index:2; }
+    /* Pigment picker visuals */
+    #pigmentOptions { display:flex; flex-wrap:wrap; gap:.25rem; margin-top:.5rem; }
+    .pigment { width:30px; height:30px; border:2px solid #fff; border-radius:50%; cursor:pointer; }
+    #bowlContents { display:flex; flex-wrap:wrap; gap:.25rem; margin-top:.5rem; }
+    .swatch { width:20px; height:20px; border:1px solid #333; border-radius:50%; }
+    .button-group { display:flex; justify-content:space-between; margin-top:0.5rem; }
+    .lives { color:#a52; font-weight:bold; margin-bottom:0.5rem; }
+  </style>
+</head>
+<body>
+  <!-- Menu -->
+  <div id="menuOverlay" class="overlay">
+    <div>
+      <h1 style="font-size:3rem; text-shadow:2px 2px 4px rgba(0,0,0,0.5)">Tempest in the Studio</h1>
+      <button id="startBtn">Start Game</button>
+      <button id="howBtn">How to Play</button>
+    </div>
+  </div>
+  <!-- Tutorial -->
+  <div id="tutorialOverlay" class="overlay hidden">
+    <div style="background:#f6f1d3; color:#333; padding:2rem; border-radius:8px; max-width:600px;">
+      <h2 style="color:#5c3b1e; margin-bottom:1rem;">How to Play</h2>
+      <ul style="color:#000; line-height:1.5; margin-left:1rem;">
+        <li>Mix pigments (30s): pick two to match the goal, click Mix.</li>
+        <li>Fetch gold leaf (30s): use WASD to navigate, collect leaf, return to Maestro.</li>
+        <li>Each success reveals part of the Mona Lisa. If any timer hits zero, you lose.</li>
+        <li>Avoid the moving apprentices (red) and stationary furniture (green). Collision will cost you a life!</li>
+        <li>You have 3 lives. Game over when you run out of lives.</li>
+      </ul>
+      <button id="closeBtn">Back</button>
+    </div>
+  </div>
+
+  <!-- Pigment Mixer -->
+  <div id="pigmentOverlay" class="hidden">
+    <h2>Mix Pigments</h2>
+    <div id="pigmentTimer">Time: 30s</div>
+    <div id="targetDisplay">Goal: -- + --</div>
+    <div id="pigmentOptions"></div>
+    <div><strong>Your Bowl:</strong><div id="bowlContents"></div></div>
+    <div class="button-group">
+      <button id="mixBtn" disabled>Mix</button>
+      <button id="resetBowlBtn" class="small">Reset Bowl</button>
+    </div>
+  </div>
+
+  <!-- Gold Leaf -->
+  <div id="goldOverlay" class="hidden">
+    <h2>Fetch Gold Leaf</h2>
+    <div id="goldTimer">Time: 30s</div>
+    <div class="lives">Lives: <span id="lifeCount">3</span></div>
+    <canvas id="goldCanvas" width="400" height="400"></canvas>
+    <p id="goldInstructions">Use WASD to move. Yellow = leaf, Blue = Maestro, avoid obstacles & apprentices.</p>
+  </div>
+
+  <!-- Masterpiece Reveal -->
+  <canvas id="masterpieceCanvas" width="200" height="200"></canvas>
+
+<script>
+  // State variables
+  let pigTime, goldTime, pigInt, goldInt;
+  let player = { x: 50, y: 350, size: 30, sprite: new Image() };
+  let master = { x: 350, y: 350, size: 36, sprite: new Image() };
+  let leaf = { x: 200, y: 50, size: 24, got: false, sprite: new Image() };
+  let obstaclesArr = [], npcsArr = [];
+  let goldLoopRunning = false;
+  let animationId = null;
+  let playerLives = 3;
+  let invincibleTimer = 0; // For temporary invincibility after hit
+  const keys = {};
+
+  // Load sprites
+  player.sprite.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHBhdGggZD0iTTMyIDYwYzE2IDAgMjQtMTYgMjQtMjhTNDggNCAxNiA0IDggMjAgOCAzMnMxNiAyOCAyNCAyOHoiIGZpbGw9IiMzODc2MmQiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjIwIiByPSI4IiBmaWxsPSIjZWNkOWM2Ii8+PGNpcmNsZSBjeD0iMjgiIGN5PSIxOCIgcj0iMiIgZmlsbD0iIzU1MyIvPjxjaXJjbGUgY3g9IjM2IiBjeT0iMTgiIHI9IjIiIGZpbGw9IiM1NTMiLz48cGF0aCBkPSJNMjggMjRjNCAxIDggMSAxMiAwIiBmaWxsPSJub25lIiBzdHJva2U9IiM1NTMiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+";
+  master.sprite.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHBhdGggZD0iTTMyIDYwYzE2IDAgMjQtMTYgMjQtMjhTNDggNCAxNiA0IDggMjAgOCAzMnMxNiAyOCAyNCAyOHoiIGZpbGw9IiMwMDRiYTkiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjIwIiByPSI4IiBmaWxsPSIjZWNkOWM2Ii8+PGNpcmNsZSBjeD0iMjgiIGN5PSIxOCIgcj0iMiIgZmlsbD0iIzU1MyIvPjxjaXJjbGUgY3g9IjM2IiBjeT0iMTgiIHI9IjIiIGZpbGw9IiM1NTMiLz48cGF0aCBkPSJNMjggMjJjNCAxIDggMSAxMiAwTTMyIDM0bC04LTEyTTMyIDM0bDgtMTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzU1MyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48L3N2Zz4=";
+  leaf.sprite.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHBhdGggZD0iTTEyIDEyaDQwdjQwSDEyeiIgZmlsbD0iI2ZmZDcwMCIvPjxwYXRoIGQ9Ik0zMiA4YzAgNCAxMiA4IDIwIDhWMzZjLTggMC0yMCA0LTIwIDgtOCAwLTEyLTgtMTItMTZzNC0yMCAxMi0yMHoiIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iLjQiLz48L3N2Zz4=";
+  
+  // Create obstacle sprite template
+  const obstacleSprite = new Image();
+  obstacleSprite.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHBhdGggZD0iTTggOGg0OHY0OEg4eiIgZmlsbD0iIzhiNSIvPjxwYXRoIGQ9Ik0xNiAxNmgzMnYzMkgxNnoiIGZpbGw9IiM2YTMiLz48cGF0aCBkPSJNMjQgMjRoMTZ2MTZIMjR6IiBmaWxsPSIjNGExIi8+PC9zdmc+";
+  
+  // Create NPC sprite template
+  const npcSprite = new Image();
+  npcSprite.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHBhdGggZD0iTTMyIDYwYzE2IDAgMjQtMTYgMjQtMjhTNDggNCAxNiA0IDggMjAgOCAzMnMxNiAyOCAyNCAyOHoiIGZpbGw9IiNhNTIiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjIwIiByPSI4IiBmaWxsPSIjZWNkOWM2Ii8+PGNpcmNsZSBjeD0iMjgiIGN5PSIxOCIgcj0iMiIgZmlsbD0iIzU1MyIvPjxjaXJjbGUgY3g9IjM2IiBjeT0iMTgiIHI9IjIiIGZpbGw9IiM1NTMiLz48cGF0aCBkPSJNMjggMjZ2LTRjNCAxIDggMSAxMiAwdjQiIHN0cm9rZT0iIzU1MyIgc3Ryb2tlLXdpZHRoPSIyIiBmaWxsPSJub25lIi8+PC9zdmc+";
+
+  // UI references
+  const menuEl = document.getElementById('menuOverlay');
+  const tutEl = document.getElementById('tutorialOverlay');
+  const pigEl = document.getElementById('pigmentOverlay');
+  const goldEl = document.getElementById('goldOverlay');
+
+  document.getElementById('startBtn').onclick = () => {
+    menuEl.classList.add('hidden');
+    pigEl.classList.remove('hidden');
+    goldEl.classList.remove('hidden');
+    playerLives = 3;
+    updateLifeDisplay();
+    initPigmentMix(); 
+    initGoldLeaf(); 
+    initMasterpiece();
+  };
+  document.getElementById('howBtn').onclick = () => tutEl.classList.remove('hidden');
+  document.getElementById('closeBtn').onclick = () => tutEl.classList.add('hidden');
+  document.getElementById('resetBowlBtn').onclick = resetMixingBowl;
+
+  // Keyboard listeners
+  window.addEventListener('keydown', e => {
+    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
+      e.preventDefault(); // Prevent scrolling with WASD/arrow keys
+    }
+    keys[e.key.toLowerCase()] = true;
+  });
+  window.addEventListener('keyup', e => {
+    keys[e.key.toLowerCase()] = false;
+  });
+
+  // Lives management
+  function updateLifeDisplay() {
+    document.getElementById('lifeCount').textContent = playerLives;
+  }
+
+  function loseLife() {
+    if (invincibleTimer > 0) return; // Player is still invincible
+    
+    playerLives--;
+    updateLifeDisplay();
+    
+    if (playerLives <= 0) {
+      gameOver("You ran out of lives!");
+    } else {
+      // Make player invincible for a short time
+      invincibleTimer = 60; // 60 frames = about 1 second
+      
+      // Reset player position
+      player.x = 50;
+      player.y = 350;
+      
+      // Flash player to indicate hit
+      let flashCount = 6;
+      const flashInterval = setInterval(() => {
+        player.flash = !player.flash;
+        flashCount--;
+        if (flashCount <= 0) {
+          clearInterval(flashInterval);
+          player.flash = false;
+        }
+      }, 100);
+    }
+  }
+
+  function resetMixingBowl() {
+    mixState.sel = [];
+    document.getElementById('bowlContents').innerHTML = '';
+    document.getElementById('mixBtn').disabled = true;
+  }
+
+  // Timers
+  function updatePigTimer() {
+    document.getElementById('pigmentTimer').textContent = `Time: ${pigTime}s`;
+    if (pigTime <= 0) {
+      clearInterval(pigInt);
+      gameOver('Too slow mixing pigments');
+    } else {
+      pigTime--;
+    }
+  }
+  
+  function startPigTimer() { 
+    clearInterval(pigInt); 
+    pigTime = 30; 
+    updatePigTimer(); 
+    pigInt = setInterval(updatePigTimer, 1000); 
+  }
+
+  function updateGoldTimer() {
+    document.getElementById('goldTimer').textContent = `Time: ${goldTime}s`;
+    if (goldTime <= 0) {
+      clearInterval(goldInt);
+      gameOver('Too slow fetching gold leaf');
+    } else {
+      goldTime--;
+    }
+  }
+  
+  function startGoldTimer() { 
+    clearInterval(goldInt); 
+    goldTime = 30; 
+    updateGoldTimer(); 
+    goldInt = setInterval(updateGoldTimer, 1000); 
+  }
+
+  function gameOver(message) { 
+    clearInterval(pigInt); 
+    clearInterval(goldInt);
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      goldLoopRunning = false;
+    }
+    alert(`Game Over! ${message}`); 
+    menuEl.classList.remove('hidden');
+    pigEl.classList.add('hidden');
+    goldEl.classList.add('hidden');
+  }
+
+  // Masterpiece Reveal
+  const masterCanv = document.getElementById('masterpieceCanvas');
+  const mCtx = masterCanv.getContext('2d');
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = 'https://upload.wikimedia.org/wikipedia/commons/6/6a/Mona_Lisa.jpg';
+  const TOTAL = 10; 
+  let revealCount = 0;
+  
+  function initMasterpiece() { 
+    revealCount = 0;
+    if (img.complete) {
+      drawMasterpiece();
+    } else {
+      img.onload = drawMasterpiece;
+    }
+  }
+  
+  function drawMasterpiece() {
+    mCtx.clearRect(0, 0, 200, 200);
+    mCtx.drawImage(img, 0, 0, 200, 200);
+    const coverH = 200 * (1 - revealCount / TOTAL);
+    mCtx.fillStyle = '#f5f1e6'; 
+    mCtx.fillRect(0, 0, 200, coverH);
+    
+    if (revealCount >= TOTAL) {
+      gameOver("You completed the masterpiece! Congratulations!");
+    }
+  }
+  
+  function revealMasterpiece() { 
+    revealCount = Math.min(TOTAL, revealCount + 1); 
+    drawMasterpiece(); 
+  }
+
+  // Pigment Mixing
+  const pigments = [
+    { name: 'Ultramarine', col: '#3f48cc' },
+    { name: 'Burnt Sienna', col: '#8a3324' },
+    { name: 'Yellow Ochre', col: '#cc9900' },
+    { name: 'Verdigris', col: '#40a070' }
+  ];
+  let mixState = { req: [], sel: [] };
+  
+  function initPigmentMix() {
+    resetMixingBowl();
+    startPigTimer();
+
+    // choose goal
+    const i1 = Math.floor(Math.random() * pigments.length);
+    let i2; 
+    do { 
+      i2 = Math.floor(Math.random() * pigments.length); 
+    } while (i2 === i1);
+    
+    mixState.req = [pigments[i1].name, pigments[i2].name];
+    document.getElementById('targetDisplay').textContent = `Goal: ${mixState.req[0]} + ${mixState.req[1]}`;
+
+    const optsEl = document.getElementById('pigmentOptions'); 
+    optsEl.innerHTML = '';
+    
+    pigments.forEach(p => {
+      const d = document.createElement('div'); 
+      d.className = 'pigment'; 
+      d.style.background = p.col; 
+      d.title = p.name;
+      
+      d.onclick = () => {
+        if (mixState.sel.includes(p.name) || mixState.sel.length >= 2) return;
+        
+        mixState.sel.push(p.name);
+        const sw = document.createElement('div'); 
+        sw.className = 'swatch'; 
+        sw.style.background = p.col;
+        document.getElementById('bowlContents').appendChild(sw);
+        
+        if (mixState.sel.length >= 2) {
+          document.getElementById('mixBtn').disabled = false;
+        }
+      };
+      
+      optsEl.appendChild(d);
+    });
+
+    document.getElementById('mixBtn').onclick = () => {
+      const selectedSorted = [...mixState.sel].sort();
+      const requiredSorted = [...mixState.req].sort();
+      
+      if (selectedSorted[0] === requiredSorted[0] && selectedSorted[1] === requiredSorted[1]) {
+        clearInterval(pigInt); 
+        alert('Correct mix!'); 
+        revealMasterpiece(); 
+        initPigmentMix();
+      } else {
+        alert('Wrong mix, try again!');
+        resetMixingBowl();
+      }
+    };
+  }
+
+  // Gold Leaf Fetch
+  const gc = document.getElementById('goldCanvas'), 
+        gctx = gc.getContext('2d');
+  
+  function createEntity(type, x, y) {
+    const entity = { 
+      x: x, 
+      y: y, 
+      size: 32, 
+      sprite: type === 'obstacle' ? obstacleSprite : npcSprite,
+      type: type
+    };
+    
+    if (type === 'npc') {
+      entity.speed = 1 + Math.random() * 1;
+      entity.direction = Math.random() * Math.PI * 2;
+      entity.changeDirectionTimer = 0;
+    }
+    
+    return entity;
+  }
+  
+  function distance(a, b) {
+    return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+  }
+  
+  function placeEntities() {
+    obstaclesArr = [];
+    npcsArr = [];
+    
+    // Create obstacles (furniture)
+    for (let i = 0; i < 8; i++) {
+      let x, y, overlapping;
+      do {
+        x = 40 + Math.random() * (360 - 40);
+        y = 40 + Math.random() * (360 - 40);
+        
+        overlapping = false;
+        // Check against player, master, leaf
+        if (distance({ x, y }, player) < 60 || 
+            distance({ x, y }, master) < 60 || 
+            distance({ x, y }, leaf) < 60) {
+          overlapping = true;
+          continue;
+        }
+        
+        // Check against other obstacles
+        for (const obs of obstaclesArr) {
+          if (distance({ x, y }, obs) < 50) {
+            overlapping = true;
+            break;
+          }
+        }
+      } while (overlapping);
+      
+      obstaclesArr.push(createEntity('obstacle', x, y));
+    }
+    
+    // Create apprentices (NPCs)
+    for (let i = 0; i < 5; i++) {
+      let x, y, overlapping;
+      do {
+        x = 40 + Math.random() * (360 - 40);
+        y = 40 + Math.random() * (360 - 40);
+        
+        overlapping = false;
+        // Check against player, master, leaf
+        if (distance({ x, y }, player) < 70 || 
+            distance({ x, y }, master) < 70 || 
+            distance({ x, y }, leaf) < 70) {
+          overlapping = true;
+          continue;
+        }
+        
+        // Check against obstacles
+        for (const obs of obstaclesArr) {
+          if (distance({ x, y }, obs) < 60) {
+            overlapping = true;
+            break;
+          }
+        }
+        
+        // Check against other NPCs
+        for (const npc of npcsArr) {
+          if (distance({ x, y }, npc) < 60) {
+            overlapping = true;
+            break;
+          }
+        }
+      } while (overlapping);
+      
+      npcsArr.push(createEntity('npc', x, y));
+    }
+  }
+  
+  function initGoldLeaf() {
+    leaf.got = false;
+    leaf.x = 50 + Math.random() * 300;
+    leaf.y = 50 + Math.random() * 100;
+    player.x = 50;
+    player.y = 350;
+    
+    // Cancel previous animation frame if exists
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      goldLoopRunning = false;
+    }
+    
+    placeEntities();
+    startGoldTimer();
+    
+    // Start gold loop
+    goldLoopRunning = true;
+    goldLoop();
+  }
+  
+  function updateGold() {
+    // Reduce invincibility timer if active
+    if (invincibleTimer > 0) {
+      invincibleTimer--;
+    }
+    
+    const speed = 3;
+    if (keys.w || keys.arrowup) player.y -= speed;
+    if (keys.s || keys.arrowdown) player.y += speed;
+    if (keys.a || keys.arrowleft) player.x -= speed;
+    if (keys.d || keys.arrowright) player.x += speed;
+    
+    // Keep player within bounds
+    player.x = Math.max(player.size/2, Math.min(400 - player.size/2, player.x));
+    player.y = Math.max(player.size/2, Math.min(400 - player.size/2, player.y));
+
+    // Check collision with leaf
+    if (!leaf.got && distance(player, leaf) < (player.size + leaf.size) / 2) {
+      leaf.got = true;
+    }
+    
+    // Check collision with master when carrying leaf
+    if (leaf.got && distance(player, master) < (player.size + master.size) / 2) {
+      clearInterval(goldInt);
+      alert('Gold delivered!');
+      revealMasterpiece();
+      initGoldLeaf();
+    }
+    
+    // Update NPCs (apprentices)
+    npcsArr.forEach(npc => {
+      // Update change direction timer
+      npc.changeDirectionTimer--;
+      
+      if (npc.changeDirectionTimer <= 0) {
+        // Change direction randomly
+        npc.direction = Math.random() * Math.PI * 2;
+        npc.changeDirectionTimer = Math.floor(Math.random() * 100) + 50; // 50-150 frames
+      }
+      
+      // Move in current direction
+      npc.x += Math.cos(npc.direction) * npc.speed;
+      npc.y += Math.sin(npc.direction) * npc.speed;
+      
+      // Keep within bounds and bounce off walls
+      if (npc.x < npc.size/2 || npc.x > 400 - npc.size/2) {
+        npc.direction = Math.PI - npc.direction;
+        npc.x = Math.max(npc.size/2, Math.min(400 - npc.size/2, npc.x));
+      }
+      if (npc.y < npc.size/2 || npc.y > 400 - npc.size/2) {
+        npc.direction = -npc.direction;
+        npc.y = Math.max(npc.size/2, Math.min(400 - npc.size/2, npc.y));
+      }
+      
+      // Check collision with obstacles and bounce
+      obstaclesArr.forEach(obs => {
+        if (distance(npc, obs) < (npc.size + obs.size) / 2) {
+          // Simple bounce - reverse direction
+          npc.direction += Math.PI;
+          // Move away from obstacle to prevent getting stuck
+          npc.x += Math.cos(npc.direction) * 2;
+          npc.y += Math.sin(npc.direction) * 2;
+        }
+      });
+      
+      // Check collision with player - this causes player to lose a life
+      if (invincibleTimer === 0 && distance(npc, player) < (npc.size + player.size) / 2 - 5) {
+        loseLife();
+      }
+    });
+    
+    // Check collision with obstacles - this causes player to lose a life
+    obstaclesArr.forEach(obs => {
+      if (invincibleTimer === 0 && distance(player, obs) < (player.size + obs.size) / 2 - 5) {
+        loseLife();
+      }
+    });
+  }
+  
+  function drawGold() {
+    gctx.clearRect(0, 0, 400, 400);
+    
+    // Draw studio floor
+    gctx.fillStyle = '#e8d7b0';
+    gctx.fillRect(0, 0, 400, 400);
+    gctx.strokeStyle = '#d0c090';
+    gctx.lineWidth = 2;
+    
+    // Draw floor tiles
+    for (let i = 0; i < 400; i += 50) {
+      gctx.beginPath();
+      gctx.moveTo(0, i);
+      gctx.lineTo(400, i);
+      gctx.stroke();
+      
+      gctx.beginPath();
+      gctx.moveTo(i, 0);
+      gctx.lineTo(i, 400);
+      gctx.stroke();
+    }
+    
+    // Draw leaf if not collected
+    if (!leaf.got) {
+      gctx.drawImage(leaf.sprite, leaf.x - leaf.size/2, leaf.y - leaf.size/2, leaf.size, leaf.size);
+    } else {
+      // Draw leaf in player's hand when collected
+      gctx.drawImage(leaf.sprite, player.x - 8, player.y - player.size/2 - 12, 16, 16);
+    }
+    
+    // Draw obstacles (furniture)
+    obstaclesArr.forEach(obs => {
+      gctx.drawImage(obs.sprite, obs.x - obs.size/2, obs.y - obs.size/2, obs.size, obs.size);
+    });
+    
+    // Draw NPCs (apprentices)
+    npcsArr.forEach(npc => {
+      gctx.drawImage(npc.sprite, npc.x - npc.size/2, npc.y - npc.size/2, npc.size, npc.size);
+    });
+    
+    // Draw master
+    gctx.drawImage(master.sprite, master.x - master.size/2, master.y - master.size/2, master.size, master.size);
+    
+    // Draw player with flashing effect if invincible
+    if (!player.flash) {
+      gctx.globalAlpha = invincibleTimer >
+gctx.globalAlpha = invincibleTimer > 0 ? 0.6 : 1.0;
+      gctx.drawImage(player.sprite, player.x - player.size/2, player.y - player.size/2, player.size, player.size);
+      gctx.globalAlpha = 1.0;
+    }
+  }
+  
+  function goldLoop() {
+    if (!goldLoopRunning) return;
+    
+    updateGold();
+    drawGold();
+    animationId = requestAnimationFrame(goldLoop);
+  }
+</script>
+</body>
+</html>
