@@ -1,0 +1,1 @@
+This project is a simple game made for a class assignment. You play as an apprentice balancing mixing pigments and bringing gold leaf back to your teacher. Eventually, you get to complete a masterpiece and win.
